@@ -5,4 +5,6 @@ authors = ["nixberg <k.nixberg@gmail.com>"]
 edition = "2018"
 
 [dev-dependencies]
-hex = "0.3.2"
+hex = "0"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

@@ -5,35 +5,22 @@ use blocks::Blockable;
 use xoodoo::Xoodoo;
 
 enum Flag {
-    Zero,
-    AbsorbKey,
-    Absorb,
-    Ratchet,
-    SqueezeKey,
-    Squeeze,
-    Crypt,
+    Zero = 0x00,
+    AbsorbKey = 0x02,
+    Absorb = 0x03,
+    Ratchet = 0x10,
+    SqueezeKey = 0x20,
+    Squeeze = 0x40,
+    Crypt = 0x80,
 }
 
-impl Flag {
-    fn value(&self) -> u8 {
-        match self {
-            Flag::Zero => 0x00,
-            Flag::AbsorbKey => 0x02,
-            Flag::Absorb => 0x03,
-            Flag::Ratchet => 0x10,
-            Flag::SqueezeKey => 0x20,
-            Flag::Squeeze => 0x40,
-            Flag::Crypt => 0x80,
-        }
-    }
-}
-
-#[derive(PartialEq)]
+#[derive(Clone, PartialEq)]
 enum Mode {
     Hash,
     Keyed,
 }
 
+#[derive(Clone)]
 struct Rates {
     absorb: usize,
     squeeze: usize,
@@ -46,12 +33,13 @@ impl Rates {
     const RATCHET: usize = 16;
 }
 
-#[derive(PartialEq)]
+#[derive(Clone, PartialEq)]
 enum Phase {
     Up,
     Down,
 }
 
+#[derive(Clone)]
 pub struct Xoodyak {
     mode: Mode,
     rates: Rates,
@@ -113,14 +101,14 @@ impl Xoodyak {
             self.up(flag);
             flag = Flag::Zero;
             for (i, byte) in block.iter().enumerate() {
-                output[i] = byte ^ self.xoodoo[i];
+                output[offset + i] = byte ^ self.xoodoo[i];
             }
             if decrypt {
                 self.down(&output[offset..(offset + block.len())], Flag::Zero);
-                offset += block.len();
             } else {
                 self.down(block, Flag::Zero);
             }
+            offset += block.len();
         }
     }
 
@@ -141,16 +129,16 @@ impl Xoodyak {
         }
         self.xoodoo[block.len()] ^= 0x01;
         self.xoodoo[47] ^= if self.mode == Mode::Hash {
-            flag.value() & 0x01
+            flag as u8 & 0x01
         } else {
-            flag.value()
+            flag as u8
         };
     }
 
     fn up(&mut self, flag: Flag) {
         self.phase = Phase::Up;
         if self.mode != Mode::Hash {
-            self.xoodoo[47] ^= flag.value();
+            self.xoodoo[47] ^= flag as u8;
         }
         self.xoodoo.permute();
     }
@@ -194,35 +182,22 @@ impl Xoodyak {
 
 #[cfg(test)]
 mod tests {
-    extern crate hex;
-
     use super::Xoodyak;
 
     #[test]
     fn hash_mode() {
-        struct KAT<'a> {
-            msg: &'a str,
-            md: &'a str,
+        #[derive(serde::Deserialize)]
+        struct KAT {
+            msg: String,
+            md: String,
         }
 
-        let kats = [
-            KAT {
-                msg: "",
-                md: "EA152F2B47BCE24EFB66C479D4ADF17BD324D806E85FF75EE369EE50DC8F8BD1"
-            },
-            KAT {
-                msg: "00",
-                md: "27921F8DDF392894460B70B3ED6C091E6421B7D2147DCD6031D7EFEBAD3030CC"
-            },
-            KAT {
-                msg: "000102030405060708090A0B0C0D0E0F101112131415161718191A1B1C1D1E1F202122232425262728",
-                md: "079BFF70855D0767CC3349752F3DEFF2B01D44A15EF68B98C9BCDF20BD1970D8"
-            },
-        ];
+        let kat_bytes = include_bytes!("../test/hash_kat.json");
+        let kats: Vec<KAT> = serde_json::from_slice(kat_bytes).unwrap();
 
         for kat in kats.iter() {
-            let msg_bytes = hex::decode(kat.msg).unwrap();
-            let md_bytes = hex::decode(kat.md).unwrap();
+            let msg_bytes = hex::decode(&kat.msg).unwrap();
+            let md_bytes = hex::decode(&kat.md).unwrap();
 
             let mut xoodyak = Xoodyak::new();
             xoodyak.absorb(&msg_bytes);
@@ -235,37 +210,24 @@ mod tests {
 
     #[test]
     fn aead_mode() {
-        struct KAT<'a> {
-            key: &'a str,
-            nonce: &'a str,
-            pt: &'a str,
-            ad: &'a str,
-            ct: &'a str,
+        #[derive(serde::Deserialize)]
+        struct KAT {
+            key: String,
+            nonce: String,
+            pt: String,
+            ad: String,
+            ct: String,
         }
 
-        let kats = [
-            KAT {
-                key: "000102030405060708090A0B0C0D0E0F",
-                nonce: "000102030405060708090A0B0C0D0E0F",
-                pt: "",
-                ad: "",
-                ct: "4BF0E393144CB58069FC1FEBCAFCFB3C",
-            },
-            KAT {
-                key: "000102030405060708090A0B0C0D0E0F",
-                nonce: "000102030405060708090A0B0C0D0E0F",
-                pt: "000102030405060708090A0B0C",
-                ad: "000102030405060708090A0B0C0D0E0F101112131415",
-                ct: "CFA1C6EFB6E4795450ABF50494C96372BF566DEC846DBAE29C36F4A9CF",
-            },
-        ];
+        let kat_bytes = include_bytes!("../test/aead_kat.json");
+        let kats: Vec<KAT> = serde_json::from_slice(kat_bytes).unwrap();
 
         for kat in kats.iter() {
-            let key = hex::decode(kat.key).unwrap();
-            let nonce = hex::decode(kat.nonce).unwrap();
-            let pt = hex::decode(kat.pt).unwrap();
-            let ad = hex::decode(kat.ad).unwrap();
-            let ct = hex::decode(kat.ct).unwrap();
+            let key = hex::decode(&kat.key).unwrap();
+            let nonce = hex::decode(&kat.nonce).unwrap();
+            let pt = hex::decode(&kat.pt).unwrap();
+            let ad = hex::decode(&kat.ad).unwrap();
+            let ct = hex::decode(&kat.ct).unwrap();
             let (ct_only, tag) = ct.split_at(pt.len());
 
             let mut xoodyak = Xoodyak::keyed(&key, &[], &[]);

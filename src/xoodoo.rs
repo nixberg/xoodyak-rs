@@ -1,6 +1,7 @@
 use std::mem::transmute;
 use std::ops::{Index, IndexMut};
 
+#[derive(Clone)]
 pub struct Xoodoo {
     state: [u32; 12],
 }
