@@ -169,6 +169,7 @@ impl Xoodyak {
     }
 
     pub fn squeeze_key_to(&mut self, buffer: &mut [u8]) {
+        assert!(self.mode == Mode::Keyed);
         self.squeeze_any_to(buffer, Flag::SqueezeKey);
     }
 
