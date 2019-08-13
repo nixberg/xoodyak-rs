@@ -73,7 +73,7 @@ impl Xoodyak {
         let bytes = [key, id, &[id.len() as u8]].concat();
         xoodyak.absorb_any(&bytes, xoodyak.rates.absorb, Flag::AbsorbKey);
 
-        if counter.len() > 0 {
+        if !counter.is_empty() {
             xoodyak.absorb_any(counter, 1, Flag::Zero);
         }
 
@@ -110,7 +110,7 @@ impl Xoodyak {
     }
 
     fn squeeze_any_to(&mut self, buffer: &mut [u8], up_flag: Flag) {
-        assert!(buffer.len() > 0);
+        assert!(!buffer.is_empty());
         let mut chunks = buffer.chunks_mut(self.rates.squeeze);
         self.up_to(chunks.next().unwrap(), up_flag);
         for chunk in chunks {
@@ -174,7 +174,7 @@ impl Xoodyak {
         assert!(self.mode == Mode::Keyed);
         let mut buffer = [0u8; Rates::RATCHET];
         self.squeeze_any_to(&mut buffer, Flag::Ratchet);
-        self.absorb_any(&mut buffer, self.rates.absorb, Flag::Zero);
+        self.absorb_any(&buffer, self.rates.absorb, Flag::Zero);
     }
 }
 
@@ -249,5 +249,11 @@ mod tests {
             assert_eq!(pt, new_pt);
             assert_eq!(tag, new_tag.as_slice());
         }
+    }
+}
+
+impl Default for Xoodyak {
+    fn default() -> Self {
+        Self::new()
     }
 }

@@ -30,7 +30,7 @@ impl Blockable for [u8] {
     fn blocks(&self, block_size: usize) -> Blocks<'_> {
         Blocks {
             v: &self,
-            block_size: block_size,
+            block_size,
             is_first_block: true,
         }
     }
