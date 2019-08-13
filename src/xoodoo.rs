@@ -9,11 +9,6 @@ pub struct Xoodoo {
 impl Index<usize> for Xoodoo {
     type Output = u8;
     fn index<'a>(&'a self, i: usize) -> &'a u8 {
-        let i = if cfg!(target_endian = "little") {
-            i
-        } else {
-            i + 3 - 2 * (i % 4)
-        };
         let bytes: &'a [u8; 48] = unsafe { transmute(&self.state) };
         &bytes[i]
     }
@@ -21,11 +16,6 @@ impl Index<usize> for Xoodoo {
 
 impl IndexMut<usize> for Xoodoo {
     fn index_mut<'a>(&'a mut self, i: usize) -> &'a mut u8 {
-        let i = if cfg!(target_endian = "little") {
-            i
-        } else {
-            i + 3 - 2 * (i % 4)
-        };
         let bytes: &'a mut [u8; 48] = unsafe { transmute(&mut self.state) };
         &mut bytes[i]
     }
@@ -45,6 +35,10 @@ impl Xoodoo {
         let round_constants = [
             0x058, 0x038, 0x3c0, 0x0d0, 0x120, 0x014, 0x060, 0x02c, 0x380, 0x0f0, 0x1a0, 0x012,
         ];
+
+        for i in 0..12 {
+            self.state[i] = u32::from_le(self.state[i]);
+        }
 
         for round in 0..12 {
             let mut e = [0u32; 4];
@@ -75,6 +69,10 @@ impl Xoodoo {
 
             self.state.swap(8, 10);
             self.state.swap(9, 11);
+        }
+
+        for i in 0..12 {
+            self.state[i] = self.state[i].to_le();
         }
     }
 }
