@@ -1,8 +1,22 @@
-use std::cmp;
+use std::cmp::min;
+
+pub trait Blockable {
+    fn blocks(&self, block_size: usize) -> Blocks<'_>;
+}
+
+impl Blockable for [u8] {
+    fn blocks(&self, rate: usize) -> Blocks<'_> {
+        Blocks {
+            tail: &self,
+            rate,
+            is_first_block: true,
+        }
+    }
+}
 
 pub struct Blocks<'a> {
-    v: &'a [u8],
-    block_size: usize,
+    tail: &'a [u8],
+    rate: usize,
     is_first_block: bool,
 }
 
@@ -10,34 +24,12 @@ impl<'a> Iterator for Blocks<'a> {
     type Item = &'a [u8];
 
     fn next(&mut self) -> Option<&'a [u8]> {
-        if self.v.is_empty() && !self.is_first_block {
-            None
-        } else {
-            self.is_first_block = false;
-            let blocksz = cmp::min(self.v.len(), self.block_size);
-            let (fst, snd) = self.v.split_at(blocksz);
-            self.v = snd;
-            Some(fst)
+        if self.tail.is_empty() && !self.is_first_block {
+            return None;
         }
+        self.is_first_block = false;
+        let (block, tail) = self.tail.split_at(min(self.tail.len(), self.rate));
+        self.tail = tail;
+        Some(block)
     }
-}
-
-pub trait Blockable {
-    fn blocks(&self, block_size: usize) -> Blocks<'_>;
-}
-
-impl Blockable for [u8] {
-    fn blocks(&self, block_size: usize) -> Blocks<'_> {
-        Blocks {
-            v: &self,
-            block_size,
-            is_first_block: true,
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn it_works() {}
 }
