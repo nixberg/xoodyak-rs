@@ -13,53 +13,70 @@ impl Xoodoo {
     pub fn permute(&mut self) {
         let mut state = [0u32; 12];
 
-        for (word, bytes) in state.iter_mut().zip(self.state.chunks_exact(4)) {
-            *word = u32::from_le_bytes(bytes.try_into().unwrap());
-        }
+        unpack(&self.state, &mut state);
 
-        let round_constants = [
-            0x058, 0x038, 0x3c0, 0x0d0, 0x120, 0x014, 0x060, 0x02c, 0x380, 0x0f0, 0x1a0, 0x012,
-        ];
+        round(&mut state, 0x058);
+        round(&mut state, 0x038);
+        round(&mut state, 0x3c0);
+        round(&mut state, 0x0d0);
+        round(&mut state, 0x120);
+        round(&mut state, 0x014);
+        round(&mut state, 0x060);
+        round(&mut state, 0x02c);
+        round(&mut state, 0x380);
+        round(&mut state, 0x0f0);
+        round(&mut state, 0x1a0);
+        round(&mut state, 0x012);
 
-        for round_constant in round_constants.iter() {
-            #[inline(always)]
-            fn rotate(v: u32, n: usize) -> u32 {
-                (v >> n) | (v << (32 - n))
-            }
+        pack(&state, &mut self.state);
+    }
+}
 
-            let mut e = [0u32; 4];
+fn unpack(source: &[u8; 48], destination: &mut [u32; 12]) {
+    for (word, bytes) in destination.iter_mut().zip(source.chunks_exact(4)) {
+        *word = u32::from_le_bytes(bytes.try_into().unwrap());
+    }
+}
 
-            for (i, e) in e.iter_mut().enumerate() {
-                *e = rotate(state[i] ^ state[i + 4] ^ state[i + 8], 18);
-                *e ^= rotate(*e, 9);
-            }
+fn round(state: &mut [u32; 12], round_constant: u32) {
+    #[inline(always)]
+    fn rotate(v: u32, n: usize) -> u32 {
+        (v >> n) | (v << (32 - n))
+    }
 
-            for (i, s) in state.iter_mut().enumerate() {
-                *s ^= e[i.wrapping_sub(1) & 3];
-            }
+    let mut e = [0u32; 4];
 
-            state.swap(7, 4);
-            state.swap(7, 5);
-            state.swap(7, 6);
-            state[0] ^= round_constant;
+    for (i, e) in e.iter_mut().enumerate() {
+        *e = rotate(state[i] ^ state[i + 4] ^ state[i + 8], 18);
+        *e ^= rotate(*e, 9);
+    }
 
-            for i in 0..4 {
-                let a = state[i];
-                let b = state[i + 4];
-                let c = rotate(state[i + 8], 21);
+    for (i, word) in state.iter_mut().enumerate() {
+        *word ^= e[i.wrapping_sub(1) & 3];
+    }
 
-                state[i + 8] = rotate((b & !a) ^ c, 24);
-                state[i + 4] = rotate((a & !c) ^ b, 31);
-                state[i] ^= c & !b;
-            }
+    state.swap(7, 4);
+    state.swap(7, 5);
+    state.swap(7, 6);
+    state[0] ^= round_constant;
 
-            state.swap(8, 10);
-            state.swap(9, 11);
-        }
+    for i in 0..4 {
+        let a = state[i];
+        let b = state[i + 4];
+        let c = rotate(state[i + 8], 21);
 
-        for (bytes, word) in self.state.chunks_exact_mut(4).zip(state.iter()) {
-            bytes.copy_from_slice(&word.to_le_bytes());
-        }
+        state[i + 8] = rotate((b & !a) ^ c, 24);
+        state[i + 4] = rotate((a & !c) ^ b, 31);
+        state[i] ^= c & !b;
+    }
+
+    state.swap(8, 10);
+    state.swap(9, 11);
+}
+
+fn pack(source: &[u32; 12], destination: &mut [u8; 48]) {
+    for (bytes, word) in destination.chunks_exact_mut(4).zip(source.iter()) {
+        bytes.copy_from_slice(&word.to_le_bytes());
     }
 }
 
