@@ -80,6 +80,35 @@ impl Xoodyak {
         xoodyak
     }
 
+    fn down(&mut self, block: &[u8], flag: Flag) {
+        debug_assert!(block.len() <= self.rates.absorb);
+        self.phase = Phase::Down;
+        for (state_byte, block_byte) in self.xoodoo.state.iter_mut().zip(block.iter()) {
+            *state_byte ^= *block_byte;
+        }
+        self.xoodoo.state[block.len()] ^= 0x01;
+        self.xoodoo.state[47] ^= if self.mode == Mode::Hash {
+            flag as u8 & 0x01
+        } else {
+            flag as u8
+        };
+    }
+
+    fn up(&mut self, flag: Flag) {
+        self.phase = Phase::Up;
+        if self.mode != Mode::Hash {
+            self.xoodoo.state[47] ^= flag as u8;
+        }
+        self.xoodoo.permute();
+    }
+
+    fn up_to(&mut self, block: &mut [u8], flag: Flag) {
+        self.up(flag);
+        for (block_byte, state_byte) in block.iter_mut().zip(self.xoodoo.state.iter()) {
+            *block_byte = *state_byte;
+        }
+    }
+
     fn absorb_any(&mut self, data: &[u8], rate: usize, down_flag: Flag) {
         let mut down_flag = down_flag;
         for block in data.blocks(rate) {
@@ -93,19 +122,22 @@ impl Xoodyak {
 
     pub fn crypt(&mut self, input: &[u8], output: &mut [u8], decrypt: bool) {
         let mut flag = Flag::Crypt;
-        let mut offset = 0;
+        let mut output = output;
         for block in input.blocks(Rates::OUTPUT) {
             self.up(flag);
             flag = Flag::Zero;
-            for (i, byte) in block.iter().enumerate() {
-                output[offset + i] = byte ^ self.xoodoo[i];
+            for (output_byte, (block_byte, state_byte)) in output
+                .iter_mut()
+                .zip(block.iter().zip(self.xoodoo.state.iter()))
+            {
+                *output_byte = *block_byte ^ *state_byte;
             }
             if decrypt {
-                self.down(&output[offset..(offset + block.len())], Flag::Zero);
+                self.down(&output[..block.len()], Flag::Zero);
             } else {
                 self.down(block, Flag::Zero);
             }
-            offset += block.len();
+            output = &mut output[block.len()..];
         }
     }
 
@@ -116,34 +148,6 @@ impl Xoodyak {
         for chunk in chunks {
             self.down(&[], Flag::Zero);
             self.up_to(chunk, Flag::Zero);
-        }
-    }
-
-    fn down(&mut self, block: &[u8], flag: Flag) {
-        self.phase = Phase::Down;
-        for (i, byte) in block.iter().enumerate() {
-            self.xoodoo[i] ^= byte;
-        }
-        self.xoodoo[block.len()] ^= 0x01;
-        self.xoodoo[47] ^= if self.mode == Mode::Hash {
-            flag as u8 & 0x01
-        } else {
-            flag as u8
-        };
-    }
-
-    fn up(&mut self, flag: Flag) {
-        self.phase = Phase::Up;
-        if self.mode != Mode::Hash {
-            self.xoodoo[47] ^= flag as u8;
-        }
-        self.xoodoo.permute();
-    }
-
-    fn up_to(&mut self, block: &mut [u8], flag: Flag) {
-        self.up(flag);
-        for (i, byte) in block.iter_mut().enumerate() {
-            *byte = self.xoodoo[i];
         }
     }
 
