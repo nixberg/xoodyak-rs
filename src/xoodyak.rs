@@ -57,35 +57,20 @@ impl Xoodyak {
         }
     }
 
-    pub fn keyed(key: &[u8], id: &[u8], counter: &[u8]) -> Xoodyak {
-        assert!(key.len() + id.len() <= Rates::INPUT);
-
-        let mut xoodyak = Xoodyak {
-            mode: Mode::Keyed,
-            rates: Rates {
-                absorb: Rates::INPUT,
-                squeeze: Rates::OUTPUT,
-            },
-            phase: Phase::Up,
-            xoodoo: Xoodoo::new(),
-        };
-
-        let bytes = [key, id, &[id.len() as u8]].concat();
-        xoodyak.absorb_any(&bytes, xoodyak.rates.absorb, Flag::AbsorbKey);
-
-        if !counter.is_empty() {
-            xoodyak.absorb_any(counter, 1, Flag::Zero);
-        }
-
+    pub fn keyed(key: &[u8], id: Option<&[u8]>, counter: Option<&[u8]>) -> Xoodyak {
+        let mut xoodyak = Xoodyak::new();
+        xoodyak.absorb_key(key, id, counter);
         xoodyak
     }
 
     fn down(&mut self, block: &[u8], flag: Flag) {
         debug_assert!(block.len() <= self.rates.absorb);
         self.phase = Phase::Down;
+
         for (state_byte, block_byte) in self.xoodoo.state.iter_mut().zip(block.iter()) {
             *state_byte ^= *block_byte;
         }
+
         self.xoodoo.state[block.len()] ^= 0x01;
         self.xoodoo.state[47] ^= if self.mode == Mode::Hash {
             flag as u8 & 0x01
@@ -109,8 +94,7 @@ impl Xoodyak {
         }
     }
 
-    fn absorb_any(&mut self, data: &[u8], rate: usize, down_flag: Flag) {
-        let mut down_flag = down_flag;
+    fn absorb_any(&mut self, data: &[u8], rate: usize, mut down_flag: Flag) {
         for block in data.blocks(rate) {
             if self.phase != Phase::Up {
                 self.up(Flag::Zero);
@@ -120,31 +104,57 @@ impl Xoodyak {
         }
     }
 
-    pub fn crypt(&mut self, input: &[u8], output: &mut [u8], decrypt: bool) {
+    fn absorb_key(&mut self, key: &[u8], id: Option<&[u8]>, counter: Option<&[u8]>) {
+        let id = id.unwrap_or_default();
+        let counter = counter.unwrap_or_default();
+
+        assert!(key.len() + id.len() <= Rates::INPUT - 1);
+
+        self.mode = Mode::Keyed;
+        self.rates = Rates {
+            absorb: Rates::INPUT,
+            squeeze: Rates::OUTPUT,
+        };
+
+        let bytes = [key, id, &[id.len() as u8]].concat();
+        self.absorb_any(&bytes, self.rates.absorb, Flag::AbsorbKey);
+
+        if !counter.is_empty() {
+            self.absorb_any(counter, 1, Flag::Zero);
+        }
+    }
+
+    pub fn crypt(&mut self, input: &[u8], mut output: &mut [u8], decrypt: bool) {
         let mut flag = Flag::Crypt;
-        let mut output = output;
+
         for block in input.blocks(Rates::OUTPUT) {
             self.up(flag);
             flag = Flag::Zero;
+
             for (output_byte, (block_byte, state_byte)) in output
                 .iter_mut()
                 .zip(block.iter().zip(self.xoodoo.state.iter()))
             {
                 *output_byte = *block_byte ^ *state_byte;
             }
+
             if decrypt {
                 self.down(&output[..block.len()], Flag::Zero);
             } else {
                 self.down(block, Flag::Zero);
             }
+
             output = &mut output[block.len()..];
         }
     }
 
     fn squeeze_any_to(&mut self, buffer: &mut [u8], up_flag: Flag) {
         assert!(!buffer.is_empty());
+
         let mut chunks = buffer.chunks_mut(self.rates.squeeze);
+
         self.up_to(chunks.next().unwrap(), up_flag);
+
         for chunk in chunks {
             self.down(&[], Flag::Zero);
             self.up_to(chunk, Flag::Zero);
@@ -238,7 +248,7 @@ mod tests {
             let ct = hex::decode(&kat.ct).unwrap();
             let (ct_only, tag) = ct.split_at(pt.len());
 
-            let mut xoodyak = Xoodyak::keyed(&key, &[], &[]);
+            let mut xoodyak = Xoodyak::keyed(&key, None, Some(&[]));
             xoodyak.absorb(&nonce);
             xoodyak.absorb(&ad);
             let mut new_ct = vec![0; ct.len()];
@@ -248,7 +258,7 @@ mod tests {
 
             assert_eq!(ct, new_ct);
 
-            xoodyak = Xoodyak::keyed(&key, &[], &[]);
+            xoodyak = Xoodyak::keyed(&key, None, None);
             xoodyak.absorb(&nonce);
             xoodyak.absorb(&ad);
             let mut new_pt = vec![0; pt.len()];
