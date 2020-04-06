@@ -58,6 +58,7 @@ impl Xoodyak {
     }
 
     pub fn keyed(key: &[u8], id: Option<&[u8]>, counter: Option<&[u8]>) -> Xoodyak {
+        assert!(!key.is_empty());
         let mut xoodyak = Xoodyak::new();
         xoodyak.absorb_key(key, id, counter);
         xoodyak
