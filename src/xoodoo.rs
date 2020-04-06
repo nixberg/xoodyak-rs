@@ -39,20 +39,15 @@ fn unpack(source: &[u8; 48], destination: &mut [u32; 12]) {
 }
 
 fn round(state: &mut [u32; 12], round_constant: u32) {
-    #[inline(always)]
-    fn rotate(v: u32, n: usize) -> u32 {
-        (v >> n) | (v << (32 - n))
-    }
-
     let mut e = [0u32; 4];
 
     for (i, e) in e.iter_mut().enumerate() {
-        *e = rotate(state[i] ^ state[i + 4] ^ state[i + 8], 18);
-        *e ^= rotate(*e, 9);
+        *e = (state[i] ^ state[i + 4] ^ state[i + 8]).rotate_right(18);
+        *e ^= e.rotate_right(9);
     }
 
     for (i, word) in state.iter_mut().enumerate() {
-        *word ^= e[i.wrapping_sub(1) & 3];
+        *word ^= e[i.wrapping_sub(1) % 4];
     }
 
     state.swap(7, 4);
@@ -63,10 +58,10 @@ fn round(state: &mut [u32; 12], round_constant: u32) {
     for i in 0..4 {
         let a = state[i];
         let b = state[i + 4];
-        let c = rotate(state[i + 8], 21);
+        let c = state[i + 8].rotate_right(21);
 
-        state[i + 8] = rotate((b & !a) ^ c, 24);
-        state[i + 4] = rotate((a & !c) ^ b, 31);
+        state[i + 8] = ((b & !a) ^ c).rotate_right(24);
+        state[i + 4] = ((a & !c) ^ b).rotate_right(31);
         state[i] ^= c & !b;
     }
 

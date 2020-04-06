@@ -23,7 +23,7 @@ pub struct Blocks<'a> {
 impl<'a> Iterator for Blocks<'a> {
     type Item = &'a [u8];
 
-    fn next(&mut self) -> Option<&'a [u8]> {
+    fn next(&mut self) -> Option<Self::Item> {
         if self.tail.is_empty() && !self.is_first_block {
             return None;
         }

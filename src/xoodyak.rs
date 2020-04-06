@@ -182,6 +182,12 @@ impl Xoodyak {
     }
 }
 
+impl Default for Xoodyak {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::Xoodyak;
@@ -253,11 +259,5 @@ mod tests {
             assert_eq!(pt, new_pt);
             assert_eq!(tag, new_tag.as_slice());
         }
-    }
-}
-
-impl Default for Xoodyak {
-    fn default() -> Self {
-        Self::new()
     }
 }
