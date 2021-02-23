@@ -1,4 +1,3 @@
-mod blocks;
 mod xoodoo;
 mod xoodyak;
 
