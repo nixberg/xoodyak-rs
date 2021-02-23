@@ -60,25 +60,6 @@ impl Xoodyak {
         }
     }
 
-    pub fn keyed(key: &[u8]) -> Xoodyak {
-        Self::keyed_id_counter(key, &[], &[])
-    }
-
-    pub fn keyed_id(key: &[u8], id: &[u8]) -> Xoodyak {
-        Self::keyed_id_counter(key, id, &[])
-    }
-
-    pub fn keyed_counter(key: &[u8], counter: &[u8]) -> Xoodyak {
-        Self::keyed_id_counter(key, &[], counter)
-    }
-
-    pub fn keyed_id_counter(key: &[u8], id: &[u8], counter: &[u8]) -> Xoodyak {
-        assert!(!key.is_empty());
-        let mut xoodyak = Xoodyak::new();
-        xoodyak.absorb_key(key, id, counter);
-        xoodyak
-    }
-
     fn down(&mut self, block: &[u8], flag: Flag) {
         debug_assert!(block.len() <= self.rates.absorb.0);
 
@@ -130,56 +111,6 @@ impl Xoodyak {
         }
     }
 
-    fn absorb_key(&mut self, key: &[u8], id: &[u8], counter: &[u8]) {
-        self.mode = Mode::Keyed;
-        self.rates = Rates {
-            absorb: Rate::KEYED_INPUT,
-            squeeze: Rate::KEYED_OUTPUT,
-        };
-
-        let buffer = [key, id, &[id.len() as u8]].concat();
-        assert!(buffer.len() <= Rate::KEYED_INPUT.0);
-
-        self.absorb_any(&buffer, self.rates.absorb, Flag::AbsorbKey);
-
-        if !counter.is_empty() {
-            self.absorb_any(counter, Rate::COUNTER, Flag::Zero);
-        }
-    }
-
-    pub fn crypt(&mut self, input: &[u8], mut output: &mut [u8], decrypt: bool) {
-        let mut flag = Flag::Crypt;
-
-        let mut chunks = input.chunks(Rate::KEYED_OUTPUT.0);
-        let mut block = chunks.next().unwrap_or_default();
-
-        loop {
-            self.up(flag);
-            flag = Flag::Zero;
-
-            for (output_byte, (block_byte, state_byte)) in output
-                .iter_mut()
-                .zip(block.iter().zip(self.state.bytes.iter()))
-            {
-                *output_byte = *block_byte ^ *state_byte;
-            }
-
-            if decrypt {
-                self.down(&output[..block.len()], Flag::Zero);
-            } else {
-                self.down(block, Flag::Zero);
-            }
-
-            output = &mut output[block.len()..];
-
-            if let Some(next_block) = chunks.next() {
-                block = next_block;
-            } else {
-                break;
-            }
-        }
-    }
-
     fn squeeze_any_to(&mut self, buffer: &mut [u8], up_flag: Flag) {
         assert!(!buffer.is_empty());
 
@@ -197,45 +128,120 @@ impl Xoodyak {
         self.absorb_any(data, self.rates.absorb, Flag::Absorb);
     }
 
+    pub fn squeeze_to(&mut self, buffer: &mut [u8]) {
+        self.squeeze_any_to(buffer, Flag::Squeeze);
+    }
+}
+
+#[derive(Clone)]
+pub struct KeyedXoodyak(Xoodyak);
+
+impl KeyedXoodyak {
+    pub fn new(key: &[u8]) -> Self {
+        Self::new_id_counter(key, &[], &[])
+    }
+
+    pub fn new_id(key: &[u8], id: &[u8]) -> Self {
+        Self::new_id_counter(key, id, &[])
+    }
+
+    pub fn new_counter(key: &[u8], counter: &[u8]) -> Self {
+        Self::new_id_counter(key, &[], counter)
+    }
+
+    pub fn new_id_counter(key: &[u8], id: &[u8], counter: &[u8]) -> Self {
+        assert!(!key.is_empty());
+        let mut keyed_xoodyak = KeyedXoodyak(Xoodyak::new());
+        keyed_xoodyak.absorb_key(key, id, counter);
+        keyed_xoodyak
+    }
+
+    fn absorb_key(&mut self, key: &[u8], id: &[u8], counter: &[u8]) {
+        self.0.mode = Mode::Keyed;
+        self.0.rates = Rates {
+            absorb: Rate::KEYED_INPUT,
+            squeeze: Rate::KEYED_OUTPUT,
+        };
+
+        let buffer = [key, id, &[id.len() as u8]].concat();
+        assert!(buffer.len() <= Rate::KEYED_INPUT.0);
+
+        self.0
+            .absorb_any(&buffer, self.0.rates.absorb, Flag::AbsorbKey);
+
+        if !counter.is_empty() {
+            self.0.absorb_any(counter, Rate::COUNTER, Flag::Zero);
+        }
+    }
+
+    pub fn crypt(&mut self, input: &[u8], mut output: &mut [u8], decrypt: bool) {
+        let mut flag = Flag::Crypt;
+
+        let mut chunks = input.chunks(Rate::KEYED_OUTPUT.0);
+        let mut block = chunks.next().unwrap_or_default();
+
+        loop {
+            self.0.up(flag);
+            flag = Flag::Zero;
+
+            for (output_byte, (block_byte, state_byte)) in output
+                .iter_mut()
+                .zip(block.iter().zip(self.0.state.bytes.iter()))
+            {
+                *output_byte = *block_byte ^ *state_byte;
+            }
+
+            if decrypt {
+                self.0.down(&output[..block.len()], Flag::Zero);
+            } else {
+                self.0.down(block, Flag::Zero);
+            }
+
+            output = &mut output[block.len()..];
+
+            if let Some(next_block) = chunks.next() {
+                block = next_block;
+            } else {
+                break;
+            }
+        }
+    }
+
+    #[inline]
+    pub fn absorb(&mut self, input: &[u8]) {
+        self.0.absorb(input);
+    }
+
     pub fn encrypt(&mut self, plaintext: &[u8], ciphertext: &mut [u8]) {
-        assert!(self.mode == Mode::Keyed);
         self.crypt(plaintext, ciphertext, false);
     }
 
     pub fn decrypt(&mut self, ciphertext: &[u8], plaintext: &mut [u8]) {
-        assert!(self.mode == Mode::Keyed);
         self.crypt(ciphertext, plaintext, true);
     }
 
+    #[inline]
     pub fn squeeze_to(&mut self, buffer: &mut [u8]) {
-        self.squeeze_any_to(buffer, Flag::Squeeze);
+        self.0.squeeze_to(buffer);
     }
 
     pub fn squeeze_key_to(&mut self, buffer: &mut [u8]) {
-        assert!(self.mode == Mode::Keyed);
-        self.squeeze_any_to(buffer, Flag::SqueezeKey);
+        self.0.squeeze_any_to(buffer, Flag::SqueezeKey);
     }
 
     pub fn ratchet(&mut self) {
-        assert!(self.mode == Mode::Keyed);
         let mut buffer = [0u8; Rate::RATCHET.0];
-        self.squeeze_any_to(&mut buffer, Flag::Ratchet);
-        self.absorb_any(&buffer, self.rates.absorb, Flag::Zero);
-    }
-}
-
-impl Default for Xoodyak {
-    fn default() -> Self {
-        Self::new()
+        self.0.squeeze_any_to(&mut buffer, Flag::Ratchet);
+        self.0.absorb_any(&buffer, self.0.rates.absorb, Flag::Zero);
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::Xoodyak;
-
     #[test]
     fn hash_mode() {
+        use super::Xoodyak;
+
         #[derive(serde::Deserialize)]
         struct KAT {
             msg: String,
@@ -260,6 +266,8 @@ mod tests {
 
     #[test]
     fn aead_mode() {
+        use super::KeyedXoodyak;
+
         #[derive(serde::Deserialize)]
         struct KAT {
             key: String,
@@ -280,7 +288,7 @@ mod tests {
             let ct = hex::decode(&kat.ct).unwrap();
             let (ct_only, tag) = ct.split_at(pt.len());
 
-            let mut encryptor = Xoodyak::keyed(&key);
+            let mut encryptor = KeyedXoodyak::new(&key);
             encryptor.absorb(&nonce);
             encryptor.absorb(&ad);
             let mut decryptor = encryptor.clone();
