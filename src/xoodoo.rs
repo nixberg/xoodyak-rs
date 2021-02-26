@@ -10,69 +10,62 @@ impl Xoodoo {
         Xoodoo { bytes: [0; 48] }
     }
 
+    pub fn permute(&mut self) {
+        let mut words = [0u32; 12];
+
+        self.unpack(&mut words);
+
+        let round_constants = &[
+            0x058u32, 0x038, 0x3c0, 0x0d0, 0x120, 0x014, 0x060, 0x02c, 0x380, 0x0f0, 0x1a0, 0x012,
+        ];
+
+        for &round_constant in round_constants {
+            let mut e = [0u32; 4];
+
+            for (i, e) in e.iter_mut().enumerate() {
+                *e = (words[i] ^ words[i + 4] ^ words[i + 8]).rotate_right(18);
+                *e ^= e.rotate_right(9);
+            }
+
+            for (i, word) in words.iter_mut().enumerate() {
+                *word ^= e[i.wrapping_sub(1) % 4];
+            }
+
+            words.swap(7, 4);
+            words.swap(7, 5);
+            words.swap(7, 6);
+            words[0] ^= round_constant;
+
+            for i in 0..4 {
+                let a = words[i];
+                let b = words[i + 4];
+                let c = words[i + 8].rotate_right(21);
+
+                words[i + 8] = ((b & !a) ^ c).rotate_right(24);
+                words[i + 4] = ((a & !c) ^ b).rotate_right(31);
+                words[i] ^= c & !b;
+            }
+
+            words.swap(8, 10);
+            words.swap(9, 11);
+        }
+
+        self.pack(&words);
+    }
+
+    #[inline]
     fn unpack(&self, destination: &mut [u32; 12]) {
         for (word, bytes) in destination.iter_mut().zip(self.bytes.chunks_exact(4)) {
             *word = u32::from_le_bytes(bytes.try_into().unwrap());
         }
     }
 
+    #[inline]
     fn pack(&mut self, source: &[u32; 12]) {
         for (bytes, word) in self.bytes.chunks_exact_mut(4).zip(source.iter()) {
             bytes.copy_from_slice(&word.to_le_bytes());
         }
     }
-
-    pub fn permute(&mut self) {
-        let mut words = [0u32; 12];
-
-        self.unpack(&mut words);
-
-        round(&mut words, 0x058);
-        round(&mut words, 0x038);
-        round(&mut words, 0x3c0);
-        round(&mut words, 0x0d0);
-        round(&mut words, 0x120);
-        round(&mut words, 0x014);
-        round(&mut words, 0x060);
-        round(&mut words, 0x02c);
-        round(&mut words, 0x380);
-        round(&mut words, 0x0f0);
-        round(&mut words, 0x1a0);
-        round(&mut words, 0x012);
-
-        self.pack(&words);
-    }
-}
-
-fn round(words: &mut [u32; 12], round_constant: u32) {
-    let mut e = [0u32; 4];
-
-    for (i, e) in e.iter_mut().enumerate() {
-        *e = (words[i] ^ words[i + 4] ^ words[i + 8]).rotate_right(18);
-        *e ^= e.rotate_right(9);
-    }
-
-    for (i, word) in words.iter_mut().enumerate() {
-        *word ^= e[i.wrapping_sub(1) % 4];
-    }
-
-    words.swap(7, 4);
-    words.swap(7, 5);
-    words.swap(7, 6);
-    words[0] ^= round_constant;
-
-    for i in 0..4 {
-        let a = words[i];
-        let b = words[i + 4];
-        let c = words[i + 8].rotate_right(21);
-
-        words[i + 8] = ((b & !a) ^ c).rotate_right(24);
-        words[i + 4] = ((a & !c) ^ b).rotate_right(31);
-        words[i] ^= c & !b;
-    }
-
-    words.swap(8, 10);
-    words.swap(9, 11);
 }
 
 #[cfg(test)]
