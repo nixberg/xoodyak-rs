@@ -1,4 +1,4 @@
-use std::convert::TryInto;
+use packed_simd_2::{shuffle, u32x4, u8x16, IntoBits};
 
 #[derive(Clone)]
 pub struct Xoodoo {
@@ -11,62 +11,79 @@ impl Xoodoo {
     }
 
     pub fn permute(&mut self) {
-        let mut words = [0u32; 12];
+        let (mut a, mut b, mut c) = self.unpack();
 
-        self.unpack(&mut words);
-
-        let round_constants = &[
+        let round_constants: [u32; 12] = [
             0x058, 0x038, 0x3c0, 0x0d0, 0x120, 0x014, 0x060, 0x02c, 0x380, 0x0f0, 0x1a0, 0x012,
         ];
 
-        for &round_constant in round_constants {
-            let mut e = [0u32; 4];
+        for round_constant in &round_constants {
+            let p: u32x4 = rotate(a ^ b ^ c);
+            let e: u32x4 = rotate_lanes(p, 5) ^ rotate_lanes(p, 14);
+            a ^= e;
+            b ^= e;
+            c ^= e;
 
-            for (i, e) in e.iter_mut().enumerate() {
-                let p = words[i] ^ words[i + 4] ^ words[i + 8];
-                *e = p.rotate_left(5) ^ p.rotate_left(14);
-            }
+            b = rotate(b);
+            c = rotate_lanes(c, 11);
 
-            for (i, word) in words.iter_mut().enumerate() {
-                *word ^= e[i.wrapping_sub(1) % 4];
-            }
+            a ^= u32x4::new(*round_constant, 0, 0, 0);
 
-            words.swap(7, 4);
-            words.swap(7, 5);
-            words.swap(7, 6);
+            a ^= !b & c;
+            b ^= !c & a;
+            c ^= !a & b;
 
-            words[0] ^= round_constant;
-
-            for i in 0..4 {
-                let a = words[i + 0];
-                let b = words[i + 4];
-                let c = words[i + 8].rotate_left(11);
-
-                words[i + 8] = ((b & !a) ^ c).rotate_left(8);
-                words[i + 4] = ((a & !c) ^ b).rotate_left(1);
-                words[i] ^= c & !b;
-            }
-
-            words.swap(8, 10);
-            words.swap(9, 11);
+            b = rotate_lanes(b, 1);
+            c = rho_east_part_2(c);
         }
 
-        self.pack(&words);
+        self.pack(a, b, c);
     }
 
     #[inline]
-    fn unpack(&self, destination: &mut [u32; 12]) {
-        for (word, bytes) in destination.iter_mut().zip(self.bytes.chunks_exact(4)) {
-            *word = u32::from_le_bytes(bytes.try_into().unwrap());
+    fn unpack(&self) -> (u32x4, u32x4, u32x4) {
+        #[inline]
+        fn read_from_slice(slice: &[u8]) -> u32x4 {
+            let words_le: u32x4 = u8x16::from_slice_unaligned(slice).into_bits();
+            u32x4::from_le(words_le)
         }
+        let a = read_from_slice(&self.bytes[0..16]);
+        let b = read_from_slice(&self.bytes[16..32]);
+        let c = read_from_slice(&self.bytes[32..48]);
+        (a, b, c)
     }
 
     #[inline]
-    fn pack(&mut self, source: &[u32; 12]) {
-        for (bytes, word) in self.bytes.chunks_exact_mut(4).zip(source.iter()) {
-            bytes.copy_from_slice(&word.to_le_bytes());
+    fn pack(&mut self, a: u32x4, b: u32x4, c: u32x4) {
+        #[inline]
+        fn write_to_slice(x: u32x4, slice: &mut [u8]) {
+            let bytes_le: u8x16 = u32x4::to_le(x).into_bits();
+            bytes_le.write_to_slice_unaligned(slice);
         }
+        write_to_slice(a, &mut self.bytes[0..16]);
+        write_to_slice(b, &mut self.bytes[16..32]);
+        write_to_slice(c, &mut self.bytes[32..48]);
     }
+}
+
+#[inline]
+fn rotate(x: u32x4) -> u32x4 {
+    shuffle!(x, [3, 0, 1, 2])
+}
+
+#[inline]
+fn rotate_lanes(x: u32x4, n: u32) -> u32x4 {
+    x.rotate_left(u32x4::splat(n))
+}
+
+#[inline]
+fn rho_east_part_2(c: u32x4) -> u32x4 {
+    let mut bytes: u8x16 = c.into_bits();
+    bytes = shuffle!(
+        bytes,
+        [11, 8, 9, 10, 15, 12, 13, 14, 3, 0, 1, 2, 7, 4, 5, 6]
+    );
+    bytes.into_bits()
 }
 
 #[cfg(test)]
