@@ -13,11 +13,11 @@ impl Xoodoo {
     pub fn permute(&mut self) {
         let (mut a, mut b, mut c) = self.unpack();
 
-        let round_constants: [u32; 12] = [
-            0x058, 0x038, 0x3c0, 0x0d0, 0x120, 0x014, 0x060, 0x02c, 0x380, 0x0f0, 0x1a0, 0x012,
+        let round_constants = &[
+            0x058u32, 0x038, 0x3c0, 0x0d0, 0x120, 0x014, 0x060, 0x02c, 0x380, 0x0f0, 0x1a0, 0x012,
         ];
 
-        for round_constant in &round_constants {
+        for &round_constant in round_constants {
             let p: u32x4 = rotate(a ^ b ^ c);
             let e: u32x4 = rotate_lanes(p, 5) ^ rotate_lanes(p, 14);
             a ^= e;
@@ -27,14 +27,14 @@ impl Xoodoo {
             b = rotate(b);
             c = rotate_lanes(c, 11);
 
-            a ^= u32x4::new(*round_constant, 0, 0, 0);
+            a ^= u32x4::new(round_constant, 0, 0, 0);
 
             a ^= !b & c;
             b ^= !c & a;
             c ^= !a & b;
 
             b = rotate_lanes(b, 1);
-            c = rho_east_part_2(c);
+            c = rho_east_part_two(c);
         }
 
         self.pack(a, b, c);
@@ -77,7 +77,7 @@ fn rotate_lanes(x: u32x4, n: u32) -> u32x4 {
 }
 
 #[inline]
-fn rho_east_part_2(c: u32x4) -> u32x4 {
+fn rho_east_part_two(c: u32x4) -> u32x4 {
     let mut bytes: u8x16 = c.into_bits();
     bytes = shuffle!(
         bytes,
