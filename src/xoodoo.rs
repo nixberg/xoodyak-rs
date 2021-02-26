@@ -13,13 +13,11 @@ impl Xoodoo {
     pub fn permute(&mut self) {
         let (mut a, mut b, mut c) = self.unpack();
 
-        let round_constants = &[
-            0x058u32, 0x038, 0x3c0, 0x0d0, 0x120, 0x014, 0x060, 0x02c, 0x380, 0x0f0, 0x1a0, 0x012,
-        ];
-
-        for &round_constant in round_constants {
-            let p: u32x4 = rotate(a ^ b ^ c);
-            let e: u32x4 = rotate_lanes(p, 5) ^ rotate_lanes(p, 14);
+        for round_constant in &[
+            0x058, 0x038, 0x3c0, 0x0d0, 0x120, 0x014, 0x060, 0x02c, 0x380, 0x0f0, 0x1a0, 0x012,
+        ] {
+            let p = rotate(a ^ b ^ c);
+            let e = rotate_lanes(p, 5) ^ rotate_lanes(p, 14);
             a ^= e;
             b ^= e;
             c ^= e;
@@ -27,7 +25,7 @@ impl Xoodoo {
             b = rotate(b);
             c = rotate_lanes(c, 11);
 
-            a ^= u32x4::new(round_constant, 0, 0, 0);
+            a ^= u32x4::new(*round_constant, 0, 0, 0);
 
             a ^= !b & c;
             b ^= !c & a;
@@ -42,27 +40,24 @@ impl Xoodoo {
 
     #[inline]
     fn unpack(&self) -> (u32x4, u32x4, u32x4) {
-        #[inline]
-        fn read_from_slice(slice: &[u8]) -> u32x4 {
-            let words_le: u32x4 = u8x16::from_slice_unaligned(slice).into_bits();
-            u32x4::from_le(words_le)
-        }
-        let a = read_from_slice(&self.bytes[0..16]);
-        let b = read_from_slice(&self.bytes[16..32]);
-        let c = read_from_slice(&self.bytes[32..48]);
-        (a, b, c)
+        let a_le: u32x4 = u8x16::from_slice_unaligned(&self.bytes[00..16]).into_bits();
+        let b_le: u32x4 = u8x16::from_slice_unaligned(&self.bytes[16..32]).into_bits();
+        let c_le: u32x4 = u8x16::from_slice_unaligned(&self.bytes[32..48]).into_bits();
+        (
+            u32x4::from_le(a_le),
+            u32x4::from_le(b_le),
+            u32x4::from_le(c_le),
+        )
     }
 
     #[inline]
     fn pack(&mut self, a: u32x4, b: u32x4, c: u32x4) {
-        #[inline]
-        fn write_to_slice(x: u32x4, slice: &mut [u8]) {
-            let bytes_le: u8x16 = u32x4::to_le(x).into_bits();
-            bytes_le.write_to_slice_unaligned(slice);
-        }
-        write_to_slice(a, &mut self.bytes[0..16]);
-        write_to_slice(b, &mut self.bytes[16..32]);
-        write_to_slice(c, &mut self.bytes[32..48]);
+        let a_bytes: u8x16 = u32x4::to_le(a).into_bits();
+        let b_bytes: u8x16 = u32x4::to_le(b).into_bits();
+        let c_bytes: u8x16 = u32x4::to_le(c).into_bits();
+        a_bytes.write_to_slice_unaligned(&mut self.bytes[00..16]);
+        b_bytes.write_to_slice_unaligned(&mut self.bytes[16..32]);
+        c_bytes.write_to_slice_unaligned(&mut self.bytes[32..48]);
     }
 }
 
