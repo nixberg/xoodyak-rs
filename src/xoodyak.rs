@@ -252,15 +252,15 @@ mod tests {
         let kats: Vec<KAT> = serde_json::from_slice(kat_bytes).unwrap();
 
         for kat in kats {
-            let msg_bytes = hex::decode(&kat.msg).unwrap();
-            let md_bytes = hex::decode(&kat.md).unwrap();
+            let msg = hex::decode(&kat.msg).unwrap();
+            let md = hex::decode(&kat.md).unwrap();
 
             let mut xoodyak = Xoodyak::new();
-            xoodyak.absorb(&msg_bytes);
-            let mut new_md_bytes = vec![0; md_bytes.len()];
-            xoodyak.squeeze_to(&mut new_md_bytes);
+            xoodyak.absorb(&msg);
+            let mut new_md = vec![0; md.len()];
+            xoodyak.squeeze_to(&mut new_md);
 
-            assert_eq!(md_bytes, new_md_bytes);
+            assert_eq!(new_md, md);
         }
     }
 
@@ -298,15 +298,15 @@ mod tests {
             encryptor.encrypt(&pt, new_ct_only);
             encryptor.squeeze_to(new_tag);
 
-            assert_eq!(ct, new_ct);
+            assert_eq!(new_ct, ct);
 
             let mut new_pt = vec![0; pt.len()];
             decryptor.decrypt(ct_only, &mut new_pt);
             let mut new_tag = vec![0; tag.len()];
             decryptor.squeeze_to(&mut new_tag);
 
-            assert_eq!(pt, new_pt);
-            assert_eq!(tag, &new_tag);
+            assert_eq!(new_pt, pt);
+            assert_eq!(&new_tag, tag);
         }
     }
 }
