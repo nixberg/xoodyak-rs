@@ -65,12 +65,12 @@ impl Xoodyak {
 
         self.phase = Phase::Down;
 
-        for (state_byte, block_byte) in self.state.bytes.iter_mut().zip(block.iter()) {
+        for (state_byte, block_byte) in self.state.bytes_view_mut().iter_mut().zip(block.iter()) {
             *state_byte ^= *block_byte;
         }
 
-        self.state.bytes[block.len()] ^= 0x01;
-        self.state.bytes[47] ^= if self.mode == Mode::Hash {
+        self.state.bytes_view_mut()[block.len()] ^= 0x01;
+        self.state.bytes_view_mut()[47] ^= if self.mode == Mode::Hash {
             flag as u8 & 0x01
         } else {
             flag as u8
@@ -80,14 +80,14 @@ impl Xoodyak {
     fn up(&mut self, flag: Flag) {
         self.phase = Phase::Up;
         if self.mode != Mode::Hash {
-            self.state.bytes[47] ^= flag as u8;
+            self.state.bytes_view_mut()[47] ^= flag as u8;
         }
         self.state.permute();
     }
 
     fn up_to(&mut self, block: &mut [u8], flag: Flag) {
         self.up(flag);
-        for (block_byte, state_byte) in block.iter_mut().zip(self.state.bytes.iter()) {
+        for (block_byte, state_byte) in block.iter_mut().zip(self.state.bytes_view().iter()) {
             *block_byte = *state_byte;
         }
     }
@@ -103,11 +103,10 @@ impl Xoodyak {
             self.down(block, down_flag);
             down_flag = Flag::Zero;
 
-            if let Some(next_block) = chunks.next() {
-                block = next_block;
-            } else {
+            let Some(next_block) = chunks.next() else {
                 break;
-            }
+            };
+            block = next_block;
         }
     }
 
@@ -186,7 +185,7 @@ impl KeyedXoodyak {
 
             for (output_byte, (block_byte, state_byte)) in output
                 .iter_mut()
-                .zip(block.iter().zip(self.0.state.bytes.iter()))
+                .zip(block.iter().zip(self.0.state.bytes_view().iter()))
             {
                 *output_byte = *block_byte ^ *state_byte;
             }
@@ -199,11 +198,10 @@ impl KeyedXoodyak {
 
             output = &mut output[block.len()..];
 
-            if let Some(next_block) = chunks.next() {
-                block = next_block;
-            } else {
+            let Some(next_block) = chunks.next() else {
                 break;
-            }
+            };
+            block = next_block;
         }
     }
 
@@ -242,18 +240,10 @@ mod tests {
     fn hash_mode() {
         use super::Xoodyak;
 
-        #[derive(serde::Deserialize)]
-        struct KAT {
-            msg: String,
-            md: String,
-        }
+        let bytes = include_bytes!("../test/hash.blb");
 
-        let kat_bytes = include_bytes!("../test/hash.json");
-        let kats: Vec<KAT> = serde_json::from_slice(kat_bytes).unwrap();
-
-        for kat in kats {
-            let msg = hex::decode(&kat.msg).unwrap();
-            let md = hex::decode(&kat.md).unwrap();
+        for row in blobby::Blob2Iterator::new(bytes).unwrap() {
+            let [msg, md] = row.unwrap();
 
             let mut xoodyak = Xoodyak::new();
             xoodyak.absorb(&msg);
@@ -268,25 +258,10 @@ mod tests {
     fn aead_mode() {
         use super::KeyedXoodyak;
 
-        #[derive(serde::Deserialize)]
-        struct KAT {
-            key: String,
-            nonce: String,
-            pt: String,
-            ad: String,
-            ct: String,
-        }
+        let bytes = include_bytes!("../test/aead.blb");
 
-        let kat_bytes = include_bytes!("../test/aead.json");
-        let kats: Vec<KAT> = serde_json::from_slice(kat_bytes).unwrap();
-
-        for kat in kats {
-            let key = hex::decode(&kat.key).unwrap();
-            let nonce = hex::decode(&kat.nonce).unwrap();
-            let pt = hex::decode(&kat.pt).unwrap();
-            let ad = hex::decode(&kat.ad).unwrap();
-            let ct = hex::decode(&kat.ct).unwrap();
-            let (ct_only, tag) = ct.split_at(pt.len());
+        for row in blobby::Blob6Iterator::new(bytes).unwrap() {
+            let [key, nonce, ad, pt, ct, tag] = row.unwrap();
 
             let mut encryptor = KeyedXoodyak::new(&key);
             encryptor.absorb(&nonce);
@@ -294,15 +269,16 @@ mod tests {
             let mut decryptor = encryptor.clone();
 
             let mut new_ct = vec![0; ct.len()];
-            let (new_ct_only, new_tag) = new_ct.split_at_mut(pt.len());
-            encryptor.encrypt(&pt, new_ct_only);
-            encryptor.squeeze_to(new_tag);
+            let mut new_pt = vec![0; pt.len()];
+            let mut new_tag = vec![0; tag.len()];
+
+            encryptor.encrypt(&pt, &mut new_ct);
+            encryptor.squeeze_to(&mut new_tag);
 
             assert_eq!(new_ct, ct);
+            assert_eq!(&new_tag, tag);
 
-            let mut new_pt = vec![0; pt.len()];
-            decryptor.decrypt(ct_only, &mut new_pt);
-            let mut new_tag = vec![0; tag.len()];
+            decryptor.decrypt(ct, &mut new_pt);
             decryptor.squeeze_to(&mut new_tag);
 
             assert_eq!(new_pt, pt);

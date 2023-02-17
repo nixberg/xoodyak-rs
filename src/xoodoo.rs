@@ -1,8 +1,6 @@
-use std::convert::TryInto;
-
 #[derive(Clone)]
 pub struct Xoodoo {
-    pub bytes: [u8; 48],
+    bytes: [u8; 48],
 }
 
 impl Xoodoo {
@@ -52,6 +50,16 @@ impl Xoodoo {
         }
 
         self.pack(&words);
+    }
+
+    #[inline(always)]
+    pub fn bytes_view(&self) -> &[u8] {
+        &self.bytes
+    }
+
+    #[inline(always)]
+    pub fn bytes_view_mut(&mut self) -> &mut [u8] {
+        &mut self.bytes
     }
 
     #[inline]
