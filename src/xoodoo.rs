@@ -1,103 +1,51 @@
-use std::simd::{simd_swizzle, u32x4, u8x16};
+use std::simd::{simd_swizzle, u32x4, u8x16, ToBytes};
 
 #[derive(Clone)]
-pub struct Xoodoo {
-    a: u32x4,
-    b: u32x4,
-    c: u32x4,
-}
+pub struct Xoodoo(pub [u8; 48]);
 
 impl Xoodoo {
-    pub fn new() -> Self {
-        Self {
-            a: u32x4::splat(0),
-            b: u32x4::splat(0),
-            c: u32x4::splat(0),
-        }
+    pub const fn new() -> Self {
+        Self([0; 48])
     }
 
     pub fn permute(&mut self) {
-        self.a.from_le();
-        self.b.from_le();
-        self.c.from_le();
+        let mut a = u32x4::from_le_bytes(u8x16::from_array(self.0[00..16].try_into().unwrap()));
+        let mut b = u32x4::from_le_bytes(u8x16::from_array(self.0[16..32].try_into().unwrap()));
+        let mut c = u32x4::from_le_bytes(u8x16::from_array(self.0[32..48].try_into().unwrap()));
 
         for round_constant in [
             0x058, 0x038, 0x3c0, 0x0d0, 0x120, 0x014, 0x060, 0x02c, 0x380, 0x0f0, 0x1a0, 0x012,
         ] {
-            let p = (self.a ^ self.b ^ self.c).rotate_lanes_right::<1>();
-            let e = p.rotate_left::<5>() ^ p.rotate_left::<14>();
-            self.a ^= e;
-            self.b ^= e;
-            self.c ^= e;
+            let p = (a ^ b ^ c).rotate_elements_right::<1>();
+            let e = rotate_left::<5>(p) ^ rotate_left::<14>(p);
+            a ^= e;
+            b ^= e;
+            c ^= e;
 
-            self.b = self.b.rotate_lanes_right::<1>();
-            self.c = self.c.rotate_left::<11>();
+            b = b.rotate_elements_right::<1>();
+            c = rotate_left::<11>(c);
 
-            self.a ^= u32x4::from_array([round_constant, 0, 0, 0]);
+            a ^= u32x4::from_array([round_constant, 0, 0, 0]);
+            
+            a ^= !b & c;
+            b ^= !c & a;
+            c ^= !a & b;
 
-            self.a ^= !self.b & self.c;
-            self.b ^= !self.c & self.a;
-            self.c ^= !self.a & self.b;
-
-            self.b = self.b.rotate_left::<1>();
-            self.c = self.c.rho_east_part_two();
+            b = rotate_left::<1>(b);
+            c = u32x4::from_le_bytes(simd_swizzle!(
+                c.to_le_bytes(), [11, 8, 9, 10, 15, 12, 13, 14, 3, 0, 1, 2, 7, 4, 5, 6]
+            ))
         }
 
-        self.a.to_le();
-        self.b.to_le();
-        self.c.to_le();
-    }
-
-    #[inline(always)]
-    pub fn bytes_view(&self) -> &[u8] {
-        unsafe { core::slice::from_raw_parts(self as *const _ as *const u8, 48) }
-    }
-
-    #[inline(always)]
-    pub fn bytes_view_mut(&mut self) -> &mut [u8] {
-        unsafe { core::slice::from_raw_parts_mut(self as *mut _ as *mut u8, 48) }
+        self.0[00..16].copy_from_slice(a.to_le_bytes().as_array());
+        self.0[16..32].copy_from_slice(b.to_le_bytes().as_array());
+        self.0[32..48].copy_from_slice(c.to_le_bytes().as_array());
     }
 }
 
-trait XoodooInternal {
-    fn from_le(&mut self);
-
-    fn rotate_left<const OFFSET: u32>(&self) -> Self;
-
-    fn rho_east_part_two(&self) -> Self;
-
-    fn to_le(&mut self);
-}
-
-impl XoodooInternal for u32x4 {
-    #[inline(always)]
-    fn from_le(&mut self) {
-        self.as_mut_array()
-            .iter_mut()
-            .for_each(|lane| *lane = u32::from_le(*lane));
-    }
-
-    #[inline(always)]
-    fn rotate_left<const OFFSET: u32>(&self) -> Self {
-        (self << Self::splat(OFFSET)) | (self >> Self::splat(32 - OFFSET))
-    }
-
-    #[inline(always)]
-    fn rho_east_part_two(&self) -> Self {
-        let mut bytes: u8x16 = unsafe { core::mem::transmute(*self) };
-        bytes = simd_swizzle!(
-            bytes,
-            [11, 8, 9, 10, 15, 12, 13, 14, 3, 0, 1, 2, 7, 4, 5, 6]
-        );
-        unsafe { core::mem::transmute(bytes) }
-    }
-
-    #[inline(always)]
-    fn to_le(&mut self) {
-        self.as_mut_array()
-            .iter_mut()
-            .for_each(|lane| *lane = lane.to_le());
-    }
+#[inline(always)]
+fn rotate_left<const OFFSET: u32>(x: u32x4) -> u32x4 {
+    x << u32x4::splat(OFFSET) | x >> u32x4::splat(32 - OFFSET)
 }
 
 #[cfg(test)]
@@ -113,7 +61,7 @@ mod tests {
         }
 
         assert_eq!(
-            xoodoo.bytes_view(),
+            xoodoo.0,
             [
                 0xb0, 0xfa, 0x04, 0xfe, 0xce, 0xd8, 0xd5, 0x42, 0xe7, 0x2e, 0xc6, 0x29, 0xcf, 0xe5,
                 0x7a, 0x2a, 0xa3, 0xeb, 0x36, 0xea, 0x0a, 0x9e, 0x64, 0x14, 0x1b, 0x52, 0x12, 0xfe,
