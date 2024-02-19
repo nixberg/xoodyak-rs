@@ -65,12 +65,12 @@ impl Xoodyak {
 
         self.phase = Phase::Down;
 
-        for (state_byte, block_byte) in self.state.bytes_view_mut().iter_mut().zip(block.iter()) {
+        for (state_byte, block_byte) in self.state.0.iter_mut().zip(block.iter()) {
             *state_byte ^= *block_byte;
         }
 
-        self.state.bytes_view_mut()[block.len()] ^= 0x01;
-        self.state.bytes_view_mut()[47] ^= if self.mode == Mode::Hash {
+        self.state.0[block.len()] ^= 0x01;
+        self.state.0[47] ^= if self.mode == Mode::Hash {
             flag as u8 & 0x01
         } else {
             flag as u8
@@ -80,14 +80,14 @@ impl Xoodyak {
     fn up(&mut self, flag: Flag) {
         self.phase = Phase::Up;
         if self.mode != Mode::Hash {
-            self.state.bytes_view_mut()[47] ^= flag as u8;
+            self.state.0[47] ^= flag as u8;
         }
         self.state.permute();
     }
 
     fn up_to(&mut self, block: &mut [u8], flag: Flag) {
         self.up(flag);
-        for (block_byte, state_byte) in block.iter_mut().zip(self.state.bytes_view().iter()) {
+        for (block_byte, state_byte) in block.iter_mut().zip(self.state.0.iter()) {
             *block_byte = *state_byte;
         }
     }
@@ -185,7 +185,7 @@ impl KeyedXoodyak {
 
             for (output_byte, (block_byte, state_byte)) in output
                 .iter_mut()
-                .zip(block.iter().zip(self.0.state.bytes_view().iter()))
+                .zip(block.iter().zip(self.0.state.0.iter()))
             {
                 *output_byte = *block_byte ^ *state_byte;
             }
