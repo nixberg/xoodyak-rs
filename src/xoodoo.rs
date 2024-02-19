@@ -1,23 +1,21 @@
 #[derive(Clone)]
-pub struct Xoodoo {
-    bytes: [u8; 48],
-}
+pub struct Xoodoo(pub [u8; 48]);
 
 impl Xoodoo {
-    pub fn new() -> Xoodoo {
-        Xoodoo { bytes: [0; 48] }
+    pub const fn new() -> Xoodoo {
+        Xoodoo([0; 48])
     }
 
     pub fn permute(&mut self) {
         let mut words = [0u32; 12];
+        
+        for (word, bytes) in words.iter_mut().zip(self.0.chunks_exact(4)) {
+            *word = u32::from_le_bytes(bytes.try_into().unwrap());
+        }
 
-        self.unpack(&mut words);
-
-        let round_constants = &[
+        for round_constant in [
             0x058, 0x038, 0x3c0, 0x0d0, 0x120, 0x014, 0x060, 0x02c, 0x380, 0x0f0, 0x1a0, 0x012,
-        ];
-
-        for &round_constant in round_constants {
+        ] {
             let mut e = [0u32; 4];
 
             for (i, e) in e.iter_mut().enumerate() {
@@ -49,29 +47,7 @@ impl Xoodoo {
             words.swap(9, 11);
         }
 
-        self.pack(&words);
-    }
-
-    #[inline(always)]
-    pub fn bytes_view(&self) -> &[u8] {
-        &self.bytes
-    }
-
-    #[inline(always)]
-    pub fn bytes_view_mut(&mut self) -> &mut [u8] {
-        &mut self.bytes
-    }
-
-    #[inline]
-    fn unpack(&self, destination: &mut [u32; 12]) {
-        for (word, bytes) in destination.iter_mut().zip(self.bytes.chunks_exact(4)) {
-            *word = u32::from_le_bytes(bytes.try_into().unwrap());
-        }
-    }
-
-    #[inline]
-    fn pack(&mut self, source: &[u32; 12]) {
-        for (bytes, word) in self.bytes.chunks_exact_mut(4).zip(source.iter()) {
+        for (bytes, word) in self.0.chunks_exact_mut(4).zip(words.iter()) {
             bytes.copy_from_slice(&word.to_le_bytes());
         }
     }
@@ -90,7 +66,7 @@ mod tests {
         }
 
         assert_eq!(
-            xoodoo.bytes,
+            xoodoo.0,
             [
                 0xb0, 0xfa, 0x04, 0xfe, 0xce, 0xd8, 0xd5, 0x42, 0xe7, 0x2e, 0xc6, 0x29, 0xcf, 0xe5,
                 0x7a, 0x2a, 0xa3, 0xeb, 0x36, 0xea, 0x0a, 0x9e, 0x64, 0x14, 0x1b, 0x52, 0x12, 0xfe,
