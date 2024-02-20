@@ -26,14 +26,15 @@ impl Xoodoo {
             c = rotate_left::<11>(c);
 
             a ^= u32x4::from_array([round_constant, 0, 0, 0]);
-            
+
             a ^= !b & c;
             b ^= !c & a;
             c ^= !a & b;
 
             b = rotate_left::<1>(b);
             c = u32x4::from_le_bytes(simd_swizzle!(
-                c.to_le_bytes(), [11, 8, 9, 10, 15, 12, 13, 14, 3, 0, 1, 2, 7, 4, 5, 6]
+                c.to_le_bytes(),
+                [11, 8, 9, 10, 15, 12, 13, 14, 3, 0, 1, 2, 7, 4, 5, 6]
             ))
         }
 
@@ -45,7 +46,7 @@ impl Xoodoo {
 
 #[inline(always)]
 fn rotate_left<const OFFSET: u32>(x: u32x4) -> u32x4 {
-    x << u32x4::splat(OFFSET) | x >> u32x4::splat(32 - OFFSET)
+    x << OFFSET | x >> (u32::BITS - OFFSET)
 }
 
 #[cfg(test)]
