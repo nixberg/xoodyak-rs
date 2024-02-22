@@ -32,10 +32,7 @@ impl Xoodoo {
             c ^= !a & b;
 
             b = rotate_left::<1>(b);
-            c = u32x4::from_le_bytes(simd_swizzle!(
-                c.to_le_bytes(),
-                [11, 8, 9, 10, 15, 12, 13, 14, 3, 0, 1, 2, 7, 4, 5, 6]
-            ))
+            c = u32x4::from_ne_bytes(simd_swizzle!(c.to_ne_bytes(), RHO_EAST_PART_2));
         }
 
         self.0[00..16].copy_from_slice(a.to_le_bytes().as_array());
@@ -48,6 +45,12 @@ impl Xoodoo {
 fn rotate_left<const OFFSET: u32>(x: u32x4) -> u32x4 {
     x << OFFSET | x >> (u32::BITS - OFFSET)
 }
+
+const RHO_EAST_PART_2: [usize; 16] = if cfg!(target_endian = "little") {
+    [11, 8, 9, 10, 15, 12, 13, 14, 3, 0, 1, 2, 7, 4, 5, 6]
+} else {
+    [9, 10, 11, 8, 13, 14, 15, 12, 1, 2, 3, 0, 5, 6, 7, 4]
+};
 
 #[cfg(test)]
 mod tests {
